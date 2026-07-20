@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { supabase, type Employee } from "@/lib/supabase";
+import { supabase, SUPABASE_URL, type Employee } from "@/lib/supabase";
 import { slugify, ZUUP_LOGO } from "@/lib/brand";
 import { Link } from "@tanstack/react-router";
 import { Plus, Trash2, Edit3, X, Save, ArrowLeft, Copy, Check, LogOut, Lock, Loader2 } from "lucide-react";
@@ -74,6 +74,16 @@ function AdminGate() {
 
   async function verify() {
     setChecking(true);
+
+    // Handle ?token= from SSO redirect
+    const params = new URLSearchParams(window.location.search);
+    const ssoToken = params.get("token");
+    if (ssoToken) {
+      await supabase.auth.setSession({ access_token: ssoToken, refresh_token: ssoToken });
+      // Clean token from URL without a reload
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) {
       setSession(null);
@@ -106,18 +116,14 @@ function AdminGate() {
 }
 
 function LoginScreen() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function submit(e: React.FormEvent) {
+  function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    setErr(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) setErr(error.message);
+    // Use redirect_to so the worker appends ?token= back to our page
+    const returnTo = encodeURIComponent(window.location.origin + "/admin");
+    window.location.href = `${SUPABASE_URL}/login?redirect_to=${returnTo}`;
   }
 
   return (
@@ -127,31 +133,12 @@ function LoginScreen() {
           <Lock size={18} className="text-primary" />
           <h1 className="font-display text-xl font-bold">Admin sign in</h1>
         </div>
-        <p className="text-xs text-muted-foreground">Restricted area. Sign in with your Zuup admin account.</p>
-        <div className="space-y-2">
-          <input
-            type="email"
-            placeholder="email"
-            value={email}
-            required
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full h-10 px-3 rounded-md bg-input text-sm border border-border focus:border-primary outline-none"
-          />
-          <input
-            type="password"
-            placeholder="password"
-            value={password}
-            required
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full h-10 px-3 rounded-md bg-input text-sm border border-border focus:border-primary outline-none"
-          />
-        </div>
-        {err && <div className="text-xs text-destructive">{err}</div>}
+        <p className="text-xs text-muted-foreground">Restricted area. Sign in with your Zuup admin account via SSO.</p>
         <button
           disabled={loading}
           className="w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
         >
-          {loading ? "Signing in…" : "Sign in"}
+          {loading ? "Redirecting…" : "Sign in with Zuup SSO"}
         </button>
         <Link to="/" className="block text-center text-xs text-muted-foreground hover:text-foreground">← Back to network</Link>
       </form>
