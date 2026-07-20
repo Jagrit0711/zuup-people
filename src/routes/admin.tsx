@@ -75,13 +75,30 @@ function AdminGate() {
   async function verify() {
     setChecking(true);
 
-    // Handle ?token= from SSO redirect
     const params = new URLSearchParams(window.location.search);
+
+    // OAuth code flow: ?code=zcode_xxx (short, safe for any URL length limit)
+    const code = params.get("code");
+    if (code) {
+      window.history.replaceState({}, "", window.location.pathname);
+      try {
+        const res = await fetch(`${SUPABASE_URL}/api/oauth/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code }),
+        });
+        const data = await res.json();
+        if (data?.token) {
+          await supabase.auth.setSession({ access_token: data.token, refresh_token: data.token });
+        }
+      } catch {}
+    }
+
+    // Fallback: ?token= direct (localhost dev only, JWT too large for Cloudflare)
     const ssoToken = params.get("token");
     if (ssoToken) {
-      await supabase.auth.setSession({ access_token: ssoToken, refresh_token: ssoToken });
-      // Clean token from URL without a reload
       window.history.replaceState({}, "", window.location.pathname);
+      await supabase.auth.setSession({ access_token: ssoToken, refresh_token: ssoToken });
     }
 
     const { data: userData } = await supabase.auth.getUser();
@@ -121,9 +138,10 @@ function LoginScreen() {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    // Use redirect_to so the worker appends ?token= back to our page
-    const returnTo = encodeURIComponent(window.location.origin + "/admin");
-    window.location.href = `${SUPABASE_URL}/login?redirect_to=${returnTo}`;
+    // OAuth code flow: gateway returns ?code=zcode_xxx (short) not the full JWT
+    // This avoids Cloudflare's URL length limits from the massive base64 avatar in the JWT
+    const redirectUri = encodeURIComponent(window.location.origin + "/admin");
+    window.location.href = `${SUPABASE_URL}/login?client_id=zuup_people&redirect_uri=${redirectUri}`;
   }
 
   return (
